@@ -60,38 +60,38 @@ describe("MutableTreeducer", () => {
     });
   });
 
-  // it("should stay consistent over multiple inserts and deletions", () => {
-  //   for (let x = 0; x < 10; x++) {
-  //     const original = [];
-  //     for (let i = 0; i < 1024; i++) {
-  //       original.push(i);
-  //     }
+  it("should stay consistent over multiple inserts and deletions", () => {
+    for (let x = 0; x < 10; x++) {
+      const original = [];
+      for (let i = 0; i < 1024; i++) {
+        original.push(i);
+      }
 
-  //     const tree = createSumTree();
-  //     const nodes = original.map(n => {
-  //       return tree.insert(n);
-  //     });
+      const tree = createSumTree();
+      const nodes = original.map(n => {
+        return tree.insert(n);
+      });
 
-  //     for (let i = 0; i < 512; i++) {
-  //       const index = (Math.random() * original.length) | 0;
-  //       nodes[index].delete();
-  //       original.splice(index, 1);
-  //       nodes.splice(index, 1);
-  //     }
+      for (let i = 0; i < 512; i++) {
+        const index = (Math.random() * original.length) | 0;
+        nodes[index].delete();
+        original.splice(index, 1);
+        nodes.splice(index, 1);
+      }
 
-  //     for (let i = 1; i < 128; i++) {
-  //       const index: number = (Math.random() * original.length) | 0;
-  //       nodes[index].update(-i);
-  //       original[index] = -i;
-  //     }
+      for (let i = 1; i < 128; i++) {
+        const index: number = (Math.random() * original.length) | 0;
+        nodes[index].update(-i);
+        original[index] = -i;
+      }
 
-  //     original.sort((a, b) => a - b);
-  //     expect(collect(tree)).to.deep.equal(original);
-  //     expect(tree.reduce()).to.equal(
-  //       original.reduce((acc, val) => acc + val, 0)
-  //     );
-  //   }
-  // });
+      original.sort((a, b) => a - b);
+      expect(collect(tree)).to.deep.equal(original);
+      expect(tree.reduce()).to.equal(
+        original.reduce((acc, val) => acc + val, 0)
+      );
+    }
+  });
 });
 
 describe("MutableTreeducerNode", () => {
