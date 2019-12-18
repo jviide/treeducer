@@ -63,8 +63,9 @@ describe("Treeducer", () => {
       for (let i = 0; i < 1024; i++) {
         original.push(i);
       }
+
       let tree = original.reduce((t, n) => t.insert(n), createSumTree());
-      for (let i = 0; i < 1; i++) {
+      for (let i = 0; i < 512; i++) {
         const index = (Math.random() * original.length) | 0;
         tree = tree.delete(original[index]);
         original.splice(index, 1);
