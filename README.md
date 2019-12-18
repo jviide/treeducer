@@ -23,7 +23,11 @@ let tree = new Treeducer({
   }
 });
 
-tree = tree.insert(1).insert(3);
+tree = tree
+  .insert(1)
+  .insert(2)
+  .insert(3)
+  .delete(2);
 
 tree.reduce(); // 4
 ```
