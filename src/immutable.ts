@@ -120,7 +120,7 @@ class Node<V, R> {
       this._config,
       this._mapped,
       this.left,
-      this.right,
+      right,
       shouldBe,
       this._reduced
     );
