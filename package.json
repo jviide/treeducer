@@ -4,7 +4,7 @@
   "description": "A self-balancing tree implementation w/ incremental reduction capabilities",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
-  "source": "index.ts",
+  "source": "src/index.ts",
   "repository": "jviide/treeducer",
   "author": "Joachim Viide <jviide@iki.fi>",
   "license": "MIT",
