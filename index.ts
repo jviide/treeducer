@@ -1,316 +1,313 @@
-type Cmp<V> = (a: V, b: V) => number;
+type Cmp<V, R> = (a: V, b: V, am: R, bm: R) => number;
 type Mapper<V, M> = (a: V) => M;
 type Reducer<M> = (a: M, b: M) => M;
 
-class Tree<V, R> {
-  _root?: TreeNode<V, R>;
+type Config<V, R> = {
+  readonly cmp: Cmp<V, R>;
+  readonly map: Mapper<V, R>;
+  readonly reduce: Reducer<R>;
+};
 
-  readonly _cmp: Cmp<V>;
-  readonly _map: Mapper<V, R>;
-  readonly _reduce: Reducer<R>;
+function reduced<V, R>(
+  reduce: Reducer<R>,
+  mapped: R,
+  left?: Node<V, R>,
+  right?: Node<V, R>
+): R {
+  let result = mapped;
+  if (left) {
+    result = reduce(result, left._reduced);
+  }
+  if (right) {
+    result = reduce(result, right._reduced);
+  }
+  return result;
+}
 
-  reduce(): R | undefined {
-    return this._root ? this._root._reduced : undefined;
+class Empty<V, R> {
+  constructor(readonly _config: Config<V, R>) {}
+
+  reduce(): undefined {
+    return undefined;
   }
 
-  constructor(options: { cmp: Cmp<V>; map: Mapper<V, R>; reduce: Reducer<R> }) {
-    this._cmp = options.cmp;
-    this._map = options.map;
-    this._reduce = options.reduce;
+  insert(value: V): Node<V, R> {
+    return new Node(value, this._config);
   }
 
-  insert(value: V): TreeducerNode<V> {
-    const mapped = this._map(value);
-    const node = new TreeNode(this, value, mapped);
-
-    this._root = insert(this, this._root, node);
-    return node as TreeducerNode<V>;
-  }
-
-  minNode(): TreeducerNode<V> | undefined {
-    let node = this._root;
-    while (node && node._left) {
-      node = node._left;
-    }
-    return node;
-  }
-
-  maxNode(): TreeducerNode<V> | undefined {
-    let node = this._root;
-    while (node && node._right) {
-      node = node._right;
-    }
-    return node;
+  delete(value: V): Empty<V, R> {
+    return this;
   }
 
   forEach(func: (value: V) => void, thisArg?: unknown): void {
-    forEach(this._root, func, thisArg);
+    return;
   }
 }
 
-function forEach<V>(
-  node: TreeNode<V, unknown> | undefined,
-  func: (value: V) => void,
-  thisArg: unknown
-): void {
-  if (node) {
-    forEach(node._left, func, thisArg);
-    func.call(thisArg, node.value);
-    forEach(node._right, func, thisArg);
-  }
-}
+class Node<V, R> {
+  constructor(
+    readonly value: V,
+    readonly _config: Config<V, R>,
+    readonly _mapped = _config.map(value),
+    readonly left?: Node<V, R>,
+    readonly right?: Node<V, R>,
+    readonly _level: number = 1,
+    readonly _reduced = reduced(_config.reduce, _mapped, left, right)
+  ) {}
 
-class TreeNode<V, R> {
-  _tree?: Tree<V, R>;
-  _left?: TreeNode<V, R>;
-  _right?: TreeNode<V, R>;
-  _parent?: TreeNode<V, R>;
-  _level: number;
-
-  value: V;
-  _mapped: R;
-  _reduced: R;
-
-  constructor(tree: Tree<V, R>, value: V, mapped: R) {
-    this._tree = tree;
-    this.value = value;
-    this._mapped = mapped;
-
-    this._reduced = mapped;
-    this._level = 1;
-    this._parent = undefined;
+  reduce(): R {
+    return this._reduced;
   }
 
-  update(newValue: V): boolean {
-    const tree = this._tree;
-    if (!tree) {
-      return false;
+  forEach(func: (value: V) => void, thisArg?: unknown): void {
+    if (this.left) {
+      this.left.forEach(func, thisArg);
     }
-    this.delete();
-    this._tree = tree;
-
-    const mapped = tree._map(newValue);
-    this.value = newValue;
-    this._mapped = mapped;
-    this._reduced = mapped;
-    this._level = 1;
-    tree._root = insert(tree, tree._root, this);
-    return true;
+    func(this.value);
+    if (this.right) {
+      this.right.forEach(func, thisArg);
+    }
   }
 
-  delete(): boolean {
-    const tree = this._tree;
-    if (!tree) {
-      return false;
-    }
-
-    let up = this._parent;
-    if (!this._right) {
-      takeParent(this, undefined);
-    } else if (!this._right._left) {
-      takeParent(this, this._right);
-      this._right._left = this._left;
-      if (this._left) {
-        this._left._parent = this._right;
-      }
-      up = this._right;
-    } else {
-      let left = this._right._left;
-      while (left._left) {
-        left = left._left;
-      }
-
-      up = left._parent!;
-      up._left = left._right;
-      if (left._right) {
-        left._right._parent = up;
-        left._right = undefined;
-      }
-
-      takeParent(this, left);
-
-      left._level = this._level;
-      left._left = this._left;
-      left._right = this._right;
-      if (this._left) {
-        this._left._parent = left;
-      }
-      if (this._right) {
-        this._right._parent = left;
-      }
-    }
-
-    tree._root = rebalance(tree, up);
-
-    this._tree = undefined;
-    this._parent = undefined;
-    this._left = undefined;
-    this._right = undefined;
-    this._reduced = this._mapped;
-    return true;
+  delete(value: V): Node<V, R> | Empty<V, R> {
+    const node = this._delete(value, this._config.map(value));
+    return node || new Empty(this._config);
   }
-}
 
-function rebalance<V, R>(
-  tree: Tree<V, R>,
-  up?: TreeNode<V, R>
-): TreeNode<V, R> | undefined {
-  const reduce = tree._reduce;
-  while (up) {
-    rereduce(up, reduce);
+  private _detachMin(): { root?: Node<V, R>; detached: Node<V, R> } {
+    if (!this.left) {
+      return { root: this.right, detached: this };
+    }
+    const min = this.left._detachMin();
+    return {
+      detached: min.detached,
+      root: new Node(
+        this.value,
+        this._config,
+        this._mapped,
+        min.root,
+        this.right,
+        this._level
+      )._rebalanced()
+    };
+  }
 
+  private _decreaseLevel(): Node<V, R> {
     const shouldBe =
       Math.min(
-        up._left ? up._left._level : 0,
-        up._right ? up._right._level : 0
+        this.left ? this.left._level : 0,
+        this.right ? this.right._level : 0
       ) + 1;
-    if (shouldBe < up._level) {
-      up._level = shouldBe;
-      if (up._right && shouldBe < up._right._level) {
-        up._right._level = shouldBe;
+    if (shouldBe >= this._level) {
+      return this;
+    }
+
+    let right = this.right;
+    if (right && shouldBe < right._level) {
+      right = new Node(
+        right.value,
+        right._config,
+        right._mapped,
+        right.left,
+        right.right,
+        shouldBe,
+        right._reduced
+      );
+    }
+
+    return new Node(
+      this.value,
+      this._config,
+      this._mapped,
+      this.left,
+      this.right,
+      shouldBe,
+      this._reduced
+    );
+  }
+
+  private _rebalanced(): Node<V, R> {
+    let node = this._decreaseLevel();
+    node = node._skew();
+
+    let right = node.right && node.right._skew();
+    if (right && right.right) {
+      const rr = right.right._skew();
+      if (rr !== right.right) {
+        right = new Node(
+          right.value,
+          right._config,
+          right._mapped,
+          right.left,
+          rr,
+          right._level,
+          right._reduced
+        );
       }
     }
 
-    up = skew(up, reduce);
-    if (up._right) {
-      up._right = skew(up._right, reduce);
-      if (up._right._right) {
-        up._right._right = skew(up._right._right, reduce);
-      }
-    }
-    up = split(up, reduce);
-    if (up._right) {
-      up._right = split(up._right, reduce);
+    if (right !== node.right) {
+      node = new Node(
+        node.value,
+        node._config,
+        node._mapped,
+        node.left,
+        right,
+        node._level,
+        node._reduced
+      );
     }
 
-    if (!up._parent) {
-      return up;
+    node = node._split();
+    right = node.right && node.right._split();
+    if (right !== node.right) {
+      node = new Node(
+        node.value,
+        node._config,
+        node._mapped,
+        node.left,
+        right,
+        node._level,
+        node._reduced
+      );
     }
-    up = up._parent;
-  }
-  return up;
-}
 
-function rereduce<V, R>(
-  node: TreeNode<V, R>,
-  reduce: Reducer<R>
-): TreeNode<V, R> {
-  let reduced = node._mapped;
-  if (node._left) {
-    reduced = reduce(reduced, node._left._reduced);
-  }
-  if (node._right) {
-    reduced = reduce(reduced, node._right._reduced);
-  }
-  node._reduced = reduced;
-  return node;
-}
-
-function insert<V, R>(
-  tree: Tree<V, R>,
-  root: TreeNode<V, R> | undefined,
-  node: TreeNode<V, R>
-): TreeNode<V, R> {
-  if (!root) {
     return node;
   }
 
-  node._parent = root;
-  if (tree._cmp(node.value, root.value) < 0) {
-    root._left = insert(tree, root._left, node);
-  } else {
-    root._right = insert(tree, root._right, node);
-  }
-  return split(skew(rereduce(root, tree._reduce), tree._reduce), tree._reduce);
-}
-
-function takeParent<V, R>(from: TreeNode<V, R>, to?: TreeNode<V, R>) {
-  const parent = from._parent;
-  if (parent) {
-    if (from === parent._left) {
-      parent._left = to;
+  private _delete(value: V, mapped: R): Node<V, R> | undefined {
+    const cmp = this._config.cmp(value, this.value, mapped, this._mapped);
+    if (cmp === 0) {
+      if (!this.left) {
+        return this.right;
+      }
+      const { root, detached } = this.right!._detachMin();
+      return new Node(
+        detached.value,
+        detached._config,
+        detached._mapped,
+        this.left,
+        root,
+        this._level
+      )._rebalanced();
+    } else if (cmp < 0) {
+      const left = this.left && this.left._delete(value, mapped);
+      if (left === this.left) {
+        return this;
+      }
+      return new Node(
+        this.value,
+        this._config,
+        this._mapped,
+        left,
+        this.right,
+        this._level
+      )._rebalanced();
     } else {
-      parent._right = to;
+      const right = this.right && this.right._delete(value, mapped);
+      if (right === this.right) {
+        return this;
+      }
+      return new Node(
+        this.value,
+        this._config,
+        this._mapped,
+        this.left,
+        right,
+        this._level
+      )._rebalanced();
     }
   }
-  if (to) {
-    to._parent = parent;
+
+  insert(value: V): Node<V, R> {
+    return this._insert(value, this._config.map(value));
+  }
+
+  private _insert(value: V, mapped: R): Node<V, R> {
+    let node: Node<V, R>;
+    if (this._config.cmp(value, this.value, mapped, this._mapped) < 0) {
+      node = new Node(
+        this.value,
+        this._config,
+        this._mapped,
+        this.left
+          ? this.left._insert(value, mapped)
+          : new Node(value, this._config, mapped),
+        this.right,
+        this._level
+      );
+    } else {
+      node = new Node(
+        this.value,
+        this._config,
+        this._mapped,
+        this.left,
+        this.right
+          ? this.right._insert(value, mapped)
+          : new Node(value, this._config, mapped),
+        this._level
+      );
+    }
+    return node._skew()._split();
+  }
+
+  private _skew(): Node<V, R> {
+    const left = this.left;
+    if (!left || this._level !== left._level) {
+      return this;
+    }
+    const right = new Node(
+      this.value,
+      this._config,
+      this._mapped,
+      left.right,
+      this.right,
+      this._level
+    );
+    return new Node(
+      left.value,
+      left._config,
+      left._mapped,
+      left.left,
+      right,
+      left._level,
+      this._reduced
+    );
+  }
+
+  private _split(): Node<V, R> {
+    const right = this.right;
+    if (!right || !right.right || this._level !== right.right._level) {
+      return this;
+    }
+
+    const left = new Node(
+      this.value,
+      this._config,
+      this._mapped,
+      this.left,
+      right.left,
+      this._level
+    );
+
+    return new Node(
+      right.value,
+      right._config,
+      right._mapped,
+      left,
+      right.right,
+      right._level + 1,
+      this._reduced
+    );
   }
 }
 
-function skew<R>(node: undefined, reduce: Reducer<R>): undefined;
-function skew<V, R>(node: TreeNode<V, R>, reduce: Reducer<R>): TreeNode<V, R>;
-function skew<V, R>(
-  node: TreeNode<V, R> | undefined,
-  reduce: Reducer<R>
-): TreeNode<V, R> | undefined {
-  if (!node) {
-    return node;
-  }
-  const left = node._left;
-  if (!left || node._level !== left._level) {
-    return node;
-  }
-
-  takeParent(node, left);
-
-  node._parent = left;
-  if (left._right) {
-    left._right._parent = node;
-  }
-  node._left = left._right;
-  left._right = node;
-
-  left._reduced = node._reduced;
-  rereduce(node, reduce);
-  return left;
-}
-
-function split<R>(node: undefined, reduce: Reducer<R>): undefined;
-function split<V, R>(node: TreeNode<V, R>, reduce: Reducer<R>): TreeNode<V, R>;
-function split<V, R>(
-  node: TreeNode<V, R> | undefined,
-  reduce: Reducer<R>
-): TreeNode<V, R> | undefined {
-  if (!node) {
-    return node;
-  }
-  const right = node._right;
-  if (!right || !right._right || node._level !== right._right._level) {
-    return node;
-  }
-
-  takeParent(node, right);
-
-  node._parent = right;
-  if (right._left) {
-    right._left._parent = node;
-  }
-  node._right = right._left;
-  right._left = node;
-  right._level += 1;
-
-  right._reduced = node._reduced;
-  rereduce(node, reduce);
-  return right;
-}
-
-export interface TreeducerNode<V> {
-  readonly value: V;
-  delete(): boolean;
-  update(newValue: V): boolean;
-}
 export interface Treeducer<V, R> {
   reduce(): R | undefined;
-  insert(value: V): TreeducerNode<V>;
-  minNode(): TreeducerNode<V> | undefined;
-  maxNode(): TreeducerNode<V> | undefined;
+  insert(value: V): Treeducer<V, R>;
+  delete(value: V): Treeducer<V, R>;
   forEach(func: (value: V) => void, thisArg?: unknown): void;
 }
-export const Treeducer = Tree as {
-  new <V, R>(options: {
-    cmp: Cmp<V>;
-    map: Mapper<V, R>;
-    reduce: Reducer<R>;
-  }): Treeducer<V, R>;
+export const Treeducer = Empty as {
+  new <V, R>(config: Config<V, R>): Treeducer<V, R>;
 };
