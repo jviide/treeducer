@@ -42,6 +42,22 @@ class Tree<V, R> {
     }
     return node;
   }
+
+  forEach(func: (value: V) => void, thisArg?: unknown): void {
+    forEach(this._root, func, thisArg);
+  }
+}
+
+function forEach<V>(
+  node: TreeNode<V, unknown> | undefined,
+  func: (value: V) => void,
+  thisArg: unknown
+): void {
+  if (node) {
+    forEach(node._left, func, thisArg);
+    func.call(thisArg, node.value);
+    forEach(node._right, func, thisArg);
+  }
 }
 
 class TreeNode<V, R> {
@@ -51,8 +67,8 @@ class TreeNode<V, R> {
   _parent?: TreeNode<V, R>;
   _level: number;
 
-  readonly value: V;
-  readonly _mapped: R;
+  value: V;
+  _mapped: R;
   _reduced: R;
 
   constructor(tree: Tree<V, R>, value: V, mapped: R) {
@@ -64,6 +80,115 @@ class TreeNode<V, R> {
     this._level = 1;
     this._parent = undefined;
   }
+
+  update(newValue: V): boolean {
+    const tree = this._tree;
+    if (!tree) {
+      return false;
+    }
+    this.delete();
+    this._tree = tree;
+
+    const mapped = tree._map(newValue);
+    this.value = newValue;
+    this._mapped = mapped;
+    this._reduced = mapped;
+    this._level = 1;
+    tree._root = insert(tree, tree._root, this);
+    return true;
+  }
+
+  delete(): boolean {
+    const tree = this._tree;
+    if (!tree) {
+      return false;
+    }
+
+    let up = this._parent;
+    if (!this._right) {
+      takeParent(this, undefined);
+    } else if (!this._right._left) {
+      takeParent(this, this._right);
+      this._right._left = this._left;
+      if (this._left) {
+        this._left._parent = this._right;
+      }
+      up = this._right;
+    } else {
+      let left = this._right._left;
+      while (left._left) {
+        left = left._left;
+      }
+
+      up = left._parent!;
+      up._left = left._right;
+      if (left._right) {
+        left._right._parent = up;
+        left._right = undefined;
+      }
+
+      takeParent(this, left);
+
+      left._level = this._level;
+      left._left = this._left;
+      left._right = this._right;
+      if (this._left) {
+        this._left._parent = left;
+      }
+      if (this._right) {
+        this._right._parent = left;
+      }
+    }
+
+    tree._root = rebalance(tree, up);
+
+    this._tree = undefined;
+    this._parent = undefined;
+    this._left = undefined;
+    this._right = undefined;
+    this._reduced = this._mapped;
+    return true;
+  }
+}
+
+function rebalance<V, R>(
+  tree: Tree<V, R>,
+  up?: TreeNode<V, R>
+): TreeNode<V, R> | undefined {
+  const reduce = tree._reduce;
+  while (up) {
+    rereduce(up, reduce);
+
+    const shouldBe =
+      Math.min(
+        up._left ? up._left._level : 0,
+        up._right ? up._right._level : 0
+      ) + 1;
+    if (shouldBe < up._level) {
+      up._level = shouldBe;
+      if (up._right && shouldBe < up._right._level) {
+        up._right._level = shouldBe;
+      }
+    }
+
+    up = skew(up, reduce);
+    if (up._right) {
+      up._right = skew(up._right, reduce);
+      if (up._right._right) {
+        up._right._right = skew(up._right._right, reduce);
+      }
+    }
+    up = split(up, reduce);
+    if (up._right) {
+      up._right = split(up._right, reduce);
+    }
+
+    if (!up._parent) {
+      return up;
+    }
+    up = up._parent;
+  }
+  return up;
 }
 
 function rereduce<V, R>(
@@ -99,6 +224,20 @@ function insert<V, R>(
   return split(skew(rereduce(root, tree._reduce), tree._reduce), tree._reduce);
 }
 
+function takeParent<V, R>(from: TreeNode<V, R>, to?: TreeNode<V, R>) {
+  const parent = from._parent;
+  if (parent) {
+    if (from === parent._left) {
+      parent._left = to;
+    } else {
+      parent._right = to;
+    }
+  }
+  if (to) {
+    to._parent = parent;
+  }
+}
+
 function skew<R>(node: undefined, reduce: Reducer<R>): undefined;
 function skew<V, R>(node: TreeNode<V, R>, reduce: Reducer<R>): TreeNode<V, R>;
 function skew<V, R>(
@@ -112,7 +251,9 @@ function skew<V, R>(
   if (!left || node._level !== left._level) {
     return node;
   }
-  left._parent = node._parent;
+
+  takeParent(node, left);
+
   node._parent = left;
   if (left._right) {
     left._right._parent = node;
@@ -135,10 +276,12 @@ function split<V, R>(
     return node;
   }
   const right = node._right;
-  if (!right || !right._right) {
+  if (!right || !right._right || node._level !== right._right._level) {
     return node;
   }
-  right._parent = node._parent;
+
+  takeParent(node, right);
+
   node._parent = right;
   if (right._left) {
     right._left._parent = node;
@@ -154,12 +297,15 @@ function split<V, R>(
 
 export interface TreeducerNode<V> {
   readonly value: V;
+  delete(): boolean;
+  update(newValue: V): boolean;
 }
 export interface Treeducer<V, R> {
   reduce(): R | undefined;
   insert(value: V): TreeducerNode<V>;
   minNode(): TreeducerNode<V> | undefined;
   maxNode(): TreeducerNode<V> | undefined;
+  forEach(func: (value: V) => void, thisArg?: unknown): void;
 }
 export const Treeducer = Tree as {
   new <V, R>(options: {
