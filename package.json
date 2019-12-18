@@ -1,6 +1,6 @@
 {
   "name": "treeducer",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A self-balancing tree implementation w/ incremental reduction capabilities",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
