@@ -1,4 +1,4 @@
-import { Treeducer } from "../index";
+import { Treeducer } from "../src/index";
 import { expect } from "chai";
 
 function createSumTree() {

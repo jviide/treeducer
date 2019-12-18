@@ -2,7 +2,7 @@ type Cmp<V, R> = (a: V, b: V, am: R, bm: R) => number;
 type Mapper<V, M> = (a: V) => M;
 type Reducer<M> = (a: M, b: M) => M;
 
-type Config<V, R> = {
+export type Config<V, R> = {
   readonly cmp: Cmp<V, R>;
   readonly map: Mapper<V, R>;
   readonly reduce: Reducer<R>;
@@ -63,7 +63,7 @@ class Node<V, R> {
     if (this.left) {
       this.left.forEach(func, thisArg);
     }
-    func(this.value);
+    func.call(thisArg, this.value);
     if (this.right) {
       this.right.forEach(func, thisArg);
     }
