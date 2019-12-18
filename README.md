@@ -11,7 +11,7 @@ $ npm install --save treeducer
 ```ts
 import { Treeducer } from "treeducer";
 
-const tree = new Treeducer({
+let tree = new Treeducer({
   cmp(a: number, b: number) {
     return a - b;
   },
@@ -23,10 +23,9 @@ const tree = new Treeducer({
   }
 });
 
-tree.insert(1);
-tree.insert(3);
+tree = tree.insert(1).insert(3);
 
-tree.reduced; // 4
+tree.reduce(); // 4
 ```
 
 ## License
