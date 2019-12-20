@@ -70,236 +70,261 @@ class Node<V, R> {
   }
 
   delete(value: V): Node<V, R> | Empty<V, R> {
-    const node = this._delete(value, this._config.map(value));
+    const node = delete_(this, value, this._config.map(value));
     return node || new Empty(this._config);
   }
 
-  private _detachMin(): { root?: Node<V, R>; detached: Node<V, R> } {
-    if (!this.left) {
-      return { root: this.right, detached: this };
-    }
-    const min = this.left._detachMin();
-    return {
-      detached: min.detached,
-      root: new Node(
-        this.value,
-        this._config,
-        this._mapped,
-        min.root,
-        this.right,
-        this._level
-      )._rebalanced()
-    };
+  insert(value: V): Node<V, R> {
+    return insert(this, value, this._config.map(value));
   }
+}
 
-  private _decreaseLevel(): Node<V, R> {
-    const shouldBe =
-      Math.min(
-        this.left ? this.left._level : 0,
-        this.right ? this.right._level : 0
-      ) + 1;
-    if (shouldBe >= this._level) {
-      return this;
+function delete_<V, R>(
+  node: Node<V, R>,
+  value: V,
+  mapped: R
+): Node<V, R> | undefined {
+  const cmp = node._config.cmp(value, node.value, mapped, node._mapped);
+  if (cmp === 0) {
+    if (!node.left) {
+      return node.right;
     }
+    const { root, detached } = detachMin(node.right!);
+    return rebalance(
+      new Node(
+        detached.value,
+        detached._config,
+        detached._mapped,
+        node.left,
+        root,
+        node._level
+      )
+    );
+  } else if (cmp < 0) {
+    const left = node.left && delete_(node.left, value, mapped);
+    if (left === node.left) {
+      return node;
+    }
+    return rebalance(
+      new Node(
+        node.value,
+        node._config,
+        node._mapped,
+        left,
+        node.right,
+        node._level
+      )
+    );
+  } else {
+    const right = node.right && delete_(node.right, value, mapped);
+    if (right === node.right) {
+      return node;
+    }
+    return rebalance(
+      new Node(
+        node.value,
+        node._config,
+        node._mapped,
+        node.left,
+        right,
+        node._level
+      )
+    );
+  }
+}
 
-    let right = this.right;
-    if (right && shouldBe < right._level) {
+function rebalance<V, R>(root: Node<V, R>): Node<V, R> {
+  let node = skew(decreaseLevel(root));
+
+  let right = skew(node.right);
+  if (right && right.right) {
+    const rr = skew(right.right);
+    if (rr !== right.right) {
       right = new Node(
         right.value,
         right._config,
         right._mapped,
         right.left,
-        right.right,
-        shouldBe,
+        rr,
+        right._level,
         right._reduced
       );
     }
+  }
 
-    return new Node(
-      this.value,
-      this._config,
-      this._mapped,
-      this.left,
+  if (right !== node.right) {
+    node = new Node(
+      node.value,
+      node._config,
+      node._mapped,
+      node.left,
       right,
-      shouldBe,
-      this._reduced
+      node._level,
+      node._reduced
     );
   }
 
-  private _rebalanced(): Node<V, R> {
-    let node = this._decreaseLevel();
-    node = node._skew();
+  node = split(node);
+  right = split(node.right && node.right);
+  if (right !== node.right) {
+    node = new Node(
+      node.value,
+      node._config,
+      node._mapped,
+      node.left,
+      right,
+      node._level,
+      node._reduced
+    );
+  }
 
-    let right = node.right && node.right._skew();
-    if (right && right.right) {
-      const rr = right.right._skew();
-      if (rr !== right.right) {
-        right = new Node(
-          right.value,
-          right._config,
-          right._mapped,
-          right.left,
-          rr,
-          right._level,
-          right._reduced
-        );
-      }
-    }
+  return node;
+}
 
-    if (right !== node.right) {
-      node = new Node(
-        node.value,
-        node._config,
-        node._mapped,
-        node.left,
-        right,
-        node._level,
-        node._reduced
-      );
-    }
-
-    node = node._split();
-    right = node.right && node.right._split();
-    if (right !== node.right) {
-      node = new Node(
-        node.value,
-        node._config,
-        node._mapped,
-        node.left,
-        right,
-        node._level,
-        node._reduced
-      );
-    }
-
+function decreaseLevel<V, R>(node: Node<V, R>): Node<V, R> {
+  const shouldBe =
+    Math.min(
+      node.left ? node.left._level : 0,
+      node.right ? node.right._level : 0
+    ) + 1;
+  if (shouldBe >= node._level) {
     return node;
   }
 
-  private _delete(value: V, mapped: R): Node<V, R> | undefined {
-    const cmp = this._config.cmp(value, this.value, mapped, this._mapped);
-    if (cmp === 0) {
-      if (!this.left) {
-        return this.right;
-      }
-      const { root, detached } = this.right!._detachMin();
-      return new Node(
-        detached.value,
-        detached._config,
-        detached._mapped,
-        this.left,
-        root,
-        this._level
-      )._rebalanced();
-    } else if (cmp < 0) {
-      const left = this.left && this.left._delete(value, mapped);
-      if (left === this.left) {
-        return this;
-      }
-      return new Node(
-        this.value,
-        this._config,
-        this._mapped,
-        left,
-        this.right,
-        this._level
-      )._rebalanced();
-    } else {
-      const right = this.right && this.right._delete(value, mapped);
-      if (right === this.right) {
-        return this;
-      }
-      return new Node(
-        this.value,
-        this._config,
-        this._mapped,
-        this.left,
-        right,
-        this._level
-      )._rebalanced();
-    }
-  }
-
-  insert(value: V): Node<V, R> {
-    return this._insert(value, this._config.map(value));
-  }
-
-  private _insert(value: V, mapped: R): Node<V, R> {
-    let node: Node<V, R>;
-    if (this._config.cmp(value, this.value, mapped, this._mapped) < 0) {
-      node = new Node(
-        this.value,
-        this._config,
-        this._mapped,
-        this.left
-          ? this.left._insert(value, mapped)
-          : new Node(value, this._config, mapped),
-        this.right,
-        this._level
-      );
-    } else {
-      node = new Node(
-        this.value,
-        this._config,
-        this._mapped,
-        this.left,
-        this.right
-          ? this.right._insert(value, mapped)
-          : new Node(value, this._config, mapped),
-        this._level
-      );
-    }
-    return node._skew()._split();
-  }
-
-  private _skew(): Node<V, R> {
-    const left = this.left;
-    if (!left || this._level !== left._level) {
-      return this;
-    }
-    const right = new Node(
-      this.value,
-      this._config,
-      this._mapped,
-      left.right,
-      this.right,
-      this._level
-    );
-    return new Node(
-      left.value,
-      left._config,
-      left._mapped,
-      left.left,
-      right,
-      left._level,
-      this._reduced
-    );
-  }
-
-  private _split(): Node<V, R> {
-    const right = this.right;
-    if (!right || !right.right || this._level !== right.right._level) {
-      return this;
-    }
-
-    const left = new Node(
-      this.value,
-      this._config,
-      this._mapped,
-      this.left,
-      right.left,
-      this._level
-    );
-
-    return new Node(
+  let right = node.right;
+  if (right && shouldBe < right._level) {
+    right = new Node(
       right.value,
       right._config,
       right._mapped,
-      left,
+      right.left,
       right.right,
-      right._level + 1,
-      this._reduced
+      shouldBe,
+      right._reduced
     );
   }
+
+  return new Node(
+    node.value,
+    node._config,
+    node._mapped,
+    node.left,
+    right,
+    shouldBe,
+    node._reduced
+  );
+}
+
+function detachMin<V, R>(
+  node: Node<V, R>
+): { root?: Node<V, R>; detached: Node<V, R> } {
+  if (!node.left) {
+    return { root: node.right, detached: node };
+  }
+  const min = detachMin(node.left);
+  return {
+    detached: min.detached,
+    root: rebalance(
+      new Node(
+        node.value,
+        node._config,
+        node._mapped,
+        min.root,
+        node.right,
+        node._level
+      )
+    )
+  };
+}
+
+function insert<V, R>(parent: Node<V, R>, value: V, mapped: R): Node<V, R> {
+  let node: Node<V, R>;
+  if (parent._config.cmp(value, parent.value, mapped, parent._mapped) < 0) {
+    node = new Node(
+      parent.value,
+      parent._config,
+      parent._mapped,
+      parent.left
+        ? insert(parent.left, value, mapped)
+        : new Node(value, parent._config, mapped),
+      parent.right,
+      parent._level
+    );
+  } else {
+    node = new Node(
+      parent.value,
+      parent._config,
+      parent._mapped,
+      parent.left,
+      parent.right
+        ? insert(parent.right, value, mapped)
+        : new Node(value, parent._config, mapped),
+      parent._level
+    );
+  }
+  return split(skew(node));
+}
+
+function split<V, R>(node: Node<V, R>): Node<V, R>;
+function split<V, R>(node?: Node<V, R>): Node<V, R> | undefined;
+function split<V, R>(node?: Node<V, R>): Node<V, R> | undefined {
+  if (!node) {
+    return node;
+  }
+
+  const right = node.right;
+  if (!right || !right.right || node._level !== right.right._level) {
+    return node;
+  }
+
+  const left = new Node(
+    node.value,
+    node._config,
+    node._mapped,
+    node.left,
+    right.left,
+    node._level
+  );
+
+  return new Node(
+    right.value,
+    right._config,
+    right._mapped,
+    left,
+    right.right,
+    right._level + 1,
+    node._reduced
+  );
+}
+
+function skew<V, R>(node: Node<V, R>): Node<V, R>;
+function skew<V, R>(node?: Node<V, R>): Node<V, R> | undefined;
+function skew<V, R>(node?: Node<V, R>): Node<V, R> | undefined {
+  if (!node) {
+    return node;
+  }
+
+  const left = node.left;
+  if (!left || node._level !== left._level) {
+    return node;
+  }
+  const right = new Node(
+    node.value,
+    node._config,
+    node._mapped,
+    left.right,
+    node.right,
+    node._level
+  );
+  return new Node(
+    left.value,
+    left._config,
+    left._mapped,
+    left.left,
+    right,
+    left._level,
+    node._reduced
+  );
 }
 
 export interface Treeducer<V, R> {
