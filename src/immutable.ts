@@ -12,6 +12,47 @@ type Generation = {
   [K in string | number | symbol]: never;
 };
 
+class Mutable<V, R> {
+  _gen?: Generation;
+  _root?: Node<V, R>;
+  _config: Config<V, R>;
+
+  constructor(_config: Config<V, R>, _root?: Node<V, R>) {
+    this._gen = {};
+    this._root = _root;
+    this._config = _config;
+  }
+
+  insert(value: V): Mutable<V, R> {
+    if (!this._gen) {
+      throw new Error();
+    }
+    const mapped = this._config.map(value);
+    if (this._root) {
+      this._root = insert(this._gen, this._root, value, mapped);
+    } else {
+      this._root = new Node(this._gen, value, this._config, mapped, mapped);
+    }
+    return this;
+  }
+
+  delete(value: V): Mutable<V, R> {
+    if (!this._gen) {
+      throw new Error();
+    }
+    if (!this._root) {
+      return this;
+    }
+    const mapped = this._config.map(value);
+    const root = delete_(this._gen, this._root, value, mapped);
+    if (root === null) {
+      return this;
+    }
+    this._root = root;
+    return this;
+  }
+}
+
 class Empty<V, R> {
   constructor(readonly _config: Config<V, R>) {}
 
@@ -30,6 +71,21 @@ class Empty<V, R> {
 
   forEach(func: (value: V) => void, thisArg?: unknown): void {
     return;
+  }
+
+  withMutations(mutator: (mutable: Mutable<V, R>) => Promise<void>): Promise<Treeducer<V, R>>;
+  withMutations(mutator: (mutable: Mutable<V, R>) => void): Treeducer<V, R>;
+  withMutations(mutator: (mutable: Mutable<V, R>) => void | Promise<void>): unknown {
+    const mutable = new Mutable(this._config, undefined);
+    const result = mutator(mutable);
+    if (result && typeof result.then === "function") {
+      return result.then(() => {
+        mutable._gen = undefined;
+        return mutable._root || this;
+      });
+    }
+    mutable._gen = undefined;
+    return mutable._root || this;
   }
 }
 
@@ -87,6 +143,21 @@ class Node<V, R> {
 
   insert(value: V): Node<V, R> {
     return insert({}, this, value, this._config.map(value));
+  }
+
+  withMutations(mutator: (mutable: Mutable<V, R>) => Promise<void>): Promise<Treeducer<V, R>>;
+  withMutations(mutator: (mutable: Mutable<V, R>) => void): Treeducer<V, R>;
+  withMutations(mutator: (mutable: Mutable<V, R>) => void | Promise<void>): unknown {
+    const mutable = new Mutable(this._config, this);
+    const result = mutator(mutable);
+    if (result && typeof result.then === "function") {
+      return result.then(() => {
+        mutable._gen = undefined;
+        return mutable._root || new Empty(this._config);
+      });
+    }
+    mutable._gen = undefined;
+    return mutable._root || new Empty(this._config);
   }
 }
 
@@ -253,6 +324,8 @@ export interface Treeducer<V, R> {
   insert(value: V): Treeducer<V, R>;
   delete(value: V): Treeducer<V, R>;
   forEach(func: (value: V) => void, thisArg?: unknown): void;
+  withMutations(mutator: (mutable: Mutable<V, R>) => Promise<void>): Promise<Treeducer<V, R>>;
+  withMutations(mutator: (mutable: Mutable<V, R>) => void): Treeducer<V, R>;
 }
 export const Treeducer = Empty as {
   new <V, R>(config: Config<V, R>): Treeducer<V, R>;

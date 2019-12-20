@@ -14,11 +14,7 @@ class Tree<V, R> {
   constructor(options: Config<V, R>) {
     this._root = new Treeducer({
       cmp(a, b, am, bm) {
-        return (
-          options.cmp(a.value, b.value, am, bm) ||
-          cmp(a._hi, b._hi) ||
-          cmp(a._lo, b._lo)
-        );
+        return options.cmp(a.value, b.value, am, bm) || cmp(a._hi, b._hi) || cmp(a._lo, b._lo);
       },
       map(a) {
         return options.map(a.value);

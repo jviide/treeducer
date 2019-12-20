@@ -15,7 +15,7 @@ function createSumTree() {
   });
 }
 
-function collect<T>(tree: Treeducer<T, unknown>): T[] {
+function collect<T>(tree: Treeducer<T, any>): T[] {
   const arr: T[] = [];
   tree.forEach(value => arr.push(value));
   return arr;
@@ -59,23 +59,43 @@ describe("Treeducer", () => {
 
   it("should stay consistent over multiple inserts and deletions", () => {
     for (let x = 0; x < 10; x++) {
-      const original = [];
-      for (let i = 0; i < 1024; i++) {
-        original.push(i);
+      const original: number[] = [];
+      for (let i = 0; i < 8024; i++) {
+        original.push((Math.random() * 2 ** 32) | 0);
       }
-
       let tree = original.reduce((t, n) => t.insert(n), createSumTree());
-      for (let i = 0; i < 512; i++) {
+      for (let i = 0; i < 1024; i++) {
         const index = (Math.random() * original.length) | 0;
         tree = tree.delete(original[index]);
         original.splice(index, 1);
       }
-
       original.sort((a, b) => a - b);
+      original.reduce((acc, val) => acc + val, 0);
       expect(collect(tree)).to.deep.equal(original);
-      expect(tree.reduce()).to.equal(
-        original.reduce((acc, val) => acc + val, 0)
-      );
+      expect(tree.reduce()).to.equal(original.reduce((acc, val) => acc + val, 0));
+    }
+  });
+
+  it("should stay consistent over multiple inserts and deletions inside withMutations", () => {
+    for (let x = 0; x < 10; x++) {
+      const original: number[] = [];
+      for (let i = 0; i < 8024; i++) {
+        original.push((Math.random() * 2 ** 32) | 0);
+      }
+      const tree = createSumTree().withMutations(tree => {
+        original.forEach(n => {
+          tree.insert(n);
+        });
+        for (let i = 0; i < 1024; i++) {
+          const index = (Math.random() * original.length) | 0;
+          tree.delete(original[index]);
+          original.splice(index, 1);
+        }
+      });
+      original.sort((a, b) => a - b);
+      original.reduce((acc, val) => acc + val, 0);
+      expect(collect(tree)).to.deep.equal(original);
+      expect(tree.reduce()).to.equal(original.reduce((acc, val) => acc + val, 0));
     }
   });
 
