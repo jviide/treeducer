@@ -82,7 +82,6 @@ describe("MutableTreeducer", () => {
         original[index] = -i;
       }
       original.sort((a, b) => a - b);
-      original.reduce((acc, val) => acc + val, 0);
       expect(collect(tree)).to.deep.equal(original);
       expect(tree.reduce()).to.equal(original.reduce((acc, val) => acc + val, 0));
     }
