@@ -48,6 +48,16 @@ describe("Treeducer", () => {
     });
   });
 
+  describe("withMutations()", () => {
+    it("should keep the original tree unchanged", () => {
+      const tree = createSumTree()
+        .insert(1)
+        .insert(2);
+      tree.withMutations(t => t.insert(3));
+      expect(collect(tree)).to.deep.equal([1, 2]);
+    });
+  });
+
   describe("forEach()", () => {
     it("should iterate throught the values in sorted order", () => {
       const original = [5, 3, 6, 8, 4, -1, 1, 4, 8, 5, 3];

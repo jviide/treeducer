@@ -8,6 +8,14 @@ export type Config<V, R> = {
   readonly reduce: Reducer<R>;
 };
 
+function copyConfig<V, R>(config: Config<V, R>): Config<V, R> {
+  return {
+    cmp: config.cmp,
+    map: config.map,
+    reduce: config.reduce
+  };
+}
+
 class Mutable<V, R> {
   _root?: Node<V, R>;
   _config?: Config<V, R>;
@@ -161,25 +169,15 @@ class Node<V, R> {
   }
 
   insert(value: V): Node<V, R> {
-    const oldConfig = this._config;
-    const newConfig = {
-      cmp: oldConfig.cmp,
-      map: oldConfig.map,
-      reduce: oldConfig.reduce
-    };
-    const mapped = newConfig.map(value);
-    const newNode = new Node(value, newConfig, mapped, mapped, undefined, undefined, 1);
+    const config = copyConfig(this._config);
+    const mapped = config.map(value);
+    const newNode = new Node(value, config, mapped, mapped, undefined, undefined, 1);
     return insert(this, newNode);
   }
 
   delete(value: V): Node<V, R> | Empty<V, R> {
-    const oldConfig = this._config;
-    const newConfig = {
-      cmp: oldConfig.cmp,
-      map: oldConfig.map,
-      reduce: oldConfig.reduce
-    };
-    const result = delete_(newConfig, this, value, newConfig.map(value));
+    const config = copyConfig(this._config);
+    const result = delete_(config, this, value, config.map(value));
     if (!result) {
       return this;
     }
@@ -197,7 +195,7 @@ class Node<V, R> {
   withMutations(mutator: (mutable: Mutable<V, R>) => Promise<void>): Promise<Treeducer<V, R>>;
   withMutations(mutator: (mutable: Mutable<V, R>) => void): Treeducer<V, R>;
   withMutations(mutator: (mutable: Mutable<V, R>) => void | Promise<void>): unknown {
-    const mutable = new Mutable(this._config);
+    const mutable = new Mutable(copyConfig(this._config));
     mutable._root = this;
 
     const result = mutator(mutable);
