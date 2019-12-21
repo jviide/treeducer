@@ -62,30 +62,27 @@ describe("MutableTreeducer", () => {
 
   it("should stay consistent over multiple inserts and deletions", () => {
     for (let x = 0; x < 10; x++) {
-      const original = [];
-      for (let i = 0; i < 3; i++) {
-        original.push(i);
+      const original: number[] = [];
+      for (let i = 0; i < 8024; i++) {
+        original.push((Math.random() * 2 ** 32) | 0);
       }
-
       const tree = createSumTree();
-      const nodes = original.map(n => {
-        return tree.insert(n);
-      });
-
-      for (let i = 0; i < 2; i++) {
+      const nodes = original.map(n => tree.insert(n));
+      for (let i = 0; i < 1024; i++) {
         const index = (Math.random() * original.length) | 0;
         nodes[index].delete();
-        original.splice(index, 1);
-        nodes.splice(index, 1);
+        nodes[index] = nodes[nodes.length - 1];
+        original[index] = original[original.length - 1];
+        original.pop();
+        nodes.pop();
       }
-
-      for (let i = 1; i < 128; i++) {
+      for (let i = 0; i < 128; i++) {
         const index: number = (Math.random() * original.length) | 0;
         nodes[index].update(-i);
         original[index] = -i;
       }
-
       original.sort((a, b) => a - b);
+      original.reduce((acc, val) => acc + val, 0);
       expect(collect(tree)).to.deep.equal(original);
       expect(tree.reduce()).to.equal(original.reduce((acc, val) => acc + val, 0));
     }

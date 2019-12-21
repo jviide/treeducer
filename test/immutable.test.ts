@@ -57,7 +57,7 @@ describe("Treeducer", () => {
     });
   });
 
-  it("should stay consistent over multiple inserts and deletions", () => {
+  it("should stay consistent over multiple inserts, deletions and updates", () => {
     for (let x = 0; x < 10; x++) {
       const original: number[] = [];
       for (let i = 0; i < 8024; i++) {
@@ -67,7 +67,13 @@ describe("Treeducer", () => {
       for (let i = 0; i < 1024; i++) {
         const index = (Math.random() * original.length) | 0;
         tree = tree.delete(original[index]);
-        original.splice(index, 1);
+        original[index] = original[original.length - 1];
+        original.pop();
+      }
+      for (let i = 0; i < 128; i++) {
+        const index: number = (Math.random() * original.length) | 0;
+        tree = tree.update(original[index], -i);
+        original[index] = -i;
       }
       original.sort((a, b) => a - b);
       original.reduce((acc, val) => acc + val, 0);
@@ -76,7 +82,7 @@ describe("Treeducer", () => {
     }
   });
 
-  it("should stay consistent over multiple inserts and deletions inside withMutations", () => {
+  it("should stay consistent over multiple inserts, deletions and updates inside withMutations", () => {
     for (let x = 0; x < 10; x++) {
       const original: number[] = [];
       for (let i = 0; i < 8024; i++) {
@@ -89,7 +95,13 @@ describe("Treeducer", () => {
         for (let i = 0; i < 1024; i++) {
           const index = (Math.random() * original.length) | 0;
           tree.delete(original[index]);
-          original.splice(index, 1);
+          original[index] = original[original.length - 1];
+          original.pop();
+        }
+        for (let i = 0; i < 128; i++) {
+          const index: number = (Math.random() * original.length) | 0;
+          tree.update(original[index], -i);
+          original[index] = -i;
         }
       });
       original.sort((a, b) => a - b);

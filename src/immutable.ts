@@ -8,48 +8,74 @@ export type Config<V, R> = {
   readonly reduce: Reducer<R>;
 };
 
-type Generation = {
-  [K in string | number | symbol]: never;
-};
-
 class Mutable<V, R> {
-  _gen?: Generation;
   _root?: Node<V, R>;
-  _config: Config<V, R>;
+  _config?: Config<V, R>;
 
-  constructor(_config: Config<V, R>, _root?: Node<V, R>) {
-    this._gen = {};
-    this._root = _root;
+  constructor(_config: Config<V, R>) {
+    this._root = undefined;
     this._config = _config;
   }
 
-  insert(value: V): Mutable<V, R> {
-    if (!this._gen) {
+  reduce(): R | undefined {
+    return this._root && this._root.reduce();
+  }
+
+  insert(value: V): void {
+    if (!this._config) {
       throw new Error();
     }
     const mapped = this._config.map(value);
-    if (this._root) {
-      this._root = insert(this._gen, this._root, value, mapped);
-    } else {
-      this._root = new Node(this._gen, value, this._config, mapped, mapped);
-    }
-    return this;
+    const newNode = new Node(value, this._config, mapped, mapped, undefined, undefined, 1);
+    this._root = insert(this._root, newNode);
   }
 
-  delete(value: V): Mutable<V, R> {
-    if (!this._gen) {
+  delete(value: V): boolean {
+    if (!this._config) {
       throw new Error();
     }
     if (!this._root) {
-      return this;
+      return false;
     }
     const mapped = this._config.map(value);
-    const root = delete_(this._gen, this._root, value, mapped);
-    if (root === null) {
-      return this;
+    const result = delete_(this._config, this._root, value, mapped);
+    if (!result) {
+      return false;
     }
-    this._root = root;
-    return this;
+    this._root = result.root;
+    return true;
+  }
+
+  update(from: V, to: V): boolean {
+    if (!this._config) {
+      throw new Error();
+    }
+    if (!this._root) {
+      return false;
+    }
+    const result = delete_(this._config, this._root, from, this._config.map(from));
+    if (!result) {
+      return false;
+    }
+    const node = unlock(this._config, result.detached);
+    const toMapped = this._config.map(to);
+    node.value = to;
+    node._mapped = toMapped;
+    node._reduced = toMapped;
+    node.left = undefined;
+    node.right = undefined;
+    node._level = 1;
+    this._root = insert(result.root, node);
+    return true;
+  }
+
+  forEach(func: (value: V) => void, thisArg?: unknown): void {
+    if (!this._config) {
+      throw new Error();
+    }
+    if (this._root) {
+      this._root.forEach(func, this);
+    }
   }
 }
 
@@ -62,10 +88,14 @@ class Empty<V, R> {
 
   insert(value: V): Node<V, R> {
     const mapped = this._config.map(value);
-    return new Node({}, value, this._config, mapped, mapped);
+    return new Node(value, this._config, mapped, mapped, undefined, undefined, 1);
   }
 
   delete(value: V): Empty<V, R> {
+    return this;
+  }
+
+  update(from: V, to: V): Empty<V, R> {
     return this;
   }
 
@@ -76,21 +106,20 @@ class Empty<V, R> {
   withMutations(mutator: (mutable: Mutable<V, R>) => Promise<void>): Promise<Treeducer<V, R>>;
   withMutations(mutator: (mutable: Mutable<V, R>) => void): Treeducer<V, R>;
   withMutations(mutator: (mutable: Mutable<V, R>) => void | Promise<void>): unknown {
-    const mutable = new Mutable(this._config, undefined);
+    const mutable = new Mutable(this._config);
     const result = mutator(mutable);
     if (result && typeof result.then === "function") {
       return result.then(() => {
-        mutable._gen = undefined;
+        mutable._config = undefined;
         return mutable._root || this;
       });
     }
-    mutable._gen = undefined;
+    mutable._config = undefined;
     return mutable._root || this;
   }
 }
 
 class Node<V, R> {
-  _gen: Generation;
   value: V;
   _config: Config<V, R>;
   _mapped: R;
@@ -100,23 +129,21 @@ class Node<V, R> {
   _level: number;
 
   constructor(
-    _gen: Generation,
     value: V,
     _config: Config<V, R>,
     _mapped: R,
     _reduced: R,
-    left?: Node<V, R> | undefined,
-    right?: Node<V, R> | undefined,
-    _level: number = 1
+    left: Node<V, R> | undefined,
+    right: Node<V, R> | undefined,
+    _level: number
   ) {
-    this._gen = _gen;
     this.value = value;
     this._config = _config;
     this._mapped = _mapped;
+    this._reduced = _reduced;
     this.left = left;
     this.right = right;
     this._level = _level;
-    this._reduced = _reduced;
   }
 
   reduce(): R {
@@ -133,72 +160,104 @@ class Node<V, R> {
     }
   }
 
-  delete(value: V): Node<V, R> | Empty<V, R> {
-    const node = delete_({}, this, value, this._config.map(value));
-    if (node === null) {
-      return this;
-    }
-    return node || new Empty(this._config);
+  insert(value: V): Node<V, R> {
+    const oldConfig = this._config;
+    const newConfig = {
+      cmp: oldConfig.cmp,
+      map: oldConfig.map,
+      reduce: oldConfig.reduce
+    };
+    const mapped = newConfig.map(value);
+    const newNode = new Node(value, newConfig, mapped, mapped, undefined, undefined, 1);
+    return insert(this, newNode);
   }
 
-  insert(value: V): Node<V, R> {
-    return insert({}, this, value, this._config.map(value));
+  delete(value: V): Node<V, R> | Empty<V, R> {
+    const oldConfig = this._config;
+    const newConfig = {
+      cmp: oldConfig.cmp,
+      map: oldConfig.map,
+      reduce: oldConfig.reduce
+    };
+    const result = delete_(newConfig, this, value, newConfig.map(value));
+    if (!result) {
+      return this;
+    }
+    return result.root || new Empty(this._config);
+  }
+
+  update(from: V, to: V): Node<V, R> {
+    const root = this.delete(from);
+    if (root === this) {
+      return this;
+    }
+    return root.insert(to);
   }
 
   withMutations(mutator: (mutable: Mutable<V, R>) => Promise<void>): Promise<Treeducer<V, R>>;
   withMutations(mutator: (mutable: Mutable<V, R>) => void): Treeducer<V, R>;
   withMutations(mutator: (mutable: Mutable<V, R>) => void | Promise<void>): unknown {
-    const mutable = new Mutable(this._config, this);
+    const mutable = new Mutable(this._config);
+    mutable._root = this;
+
     const result = mutator(mutable);
     if (result && typeof result.then === "function") {
       return result.then(() => {
-        mutable._gen = undefined;
+        mutable._config = undefined;
         return mutable._root || new Empty(this._config);
       });
     }
-    mutable._gen = undefined;
+
+    mutable._config = undefined;
     return mutable._root || new Empty(this._config);
   }
 }
 
-function delete_<V, R>(gen: Generation, node: Node<V, R>, value: V, mapped: R): Node<V, R> | undefined | null {
-  const cmp = node._config.cmp(value, node.value, mapped, node._mapped);
+function delete_<V, R>(
+  config: Config<V, R>,
+  node: Node<V, R>,
+  value: V,
+  mapped: R
+): { root?: Node<V, R>; detached: Node<V, R> } | undefined {
+  let cmp = node._config.cmp(value, node.value, mapped, node._mapped);
   if (cmp === 0) {
     if (!node.left) {
-      return node.right;
+      return { root: node.right, detached: node };
     }
-    const min = detachMin(gen, node.right!);
-    const root = unlock(gen, min.detached);
+    const min = detachMin(config, node.right!);
+    const root = unlock(config, min.detached);
     root.left = node.left;
     root.right = min.root;
     root._level = node._level;
-    return rebalance(gen, rereduce(root));
+    min.root = rebalance(config, rereduce(root));
+    min.detached = node;
+    return min;
   } else if (cmp < 0) {
     if (!node.left) {
-      return null;
+      return undefined;
     }
-    const left = delete_(gen, node.left, value, mapped);
-    if (left === null) {
-      return null;
+    const result = delete_(config, node.left, value, mapped);
+    if (result) {
+      const root = unlock(config, node);
+      root.left = result.root;
+      result.root = rebalance(config, rereduce(root));
     }
-    const root = unlock(gen, node);
-    root.left = left;
-    return rebalance(gen, rereduce(root));
+    return result;
   } else {
     if (!node.right) {
-      return null;
+      return undefined;
     }
-    const right = delete_(gen, node.right, value, mapped);
-    if (right === null) {
-      return null;
+    const result = delete_(config, node.right, value, mapped);
+    if (result) {
+      const root = unlock(config, node);
+      root.right = result.root;
+      result.root = rebalance(config, rereduce(root));
     }
-    const root = unlock(gen, node);
-    root.right = right;
-    return rebalance(gen, rereduce(root));
+    return result;
   }
 }
 
-function rebalance<V, R>(gen: Generation, root: Node<V, R>): Node<V, R> {
+function rebalance<V, R>(config: Config<V, R>, root: Node<V, R>): Node<V, R> {
   let node = root;
   const shouldBe = Math.min(node.left ? node.left._level : 0, node.right ? node.right._level : 0) + 1;
   if (shouldBe >= node._level) {
@@ -207,122 +266,132 @@ function rebalance<V, R>(gen: Generation, root: Node<V, R>): Node<V, R> {
 
   let right = node.right;
   if (right && shouldBe < right._level) {
-    right = unlock(gen, right);
+    right = unlock(config, right);
     right._level = shouldBe;
   }
 
-  node = unlock(gen, node);
+  node = unlock(config, node);
   node._level = shouldBe;
   node.right = right;
 
-  node = skew(gen, node);
-  right = skew(gen, node.right);
-  if (right && right.right) {
-    const rr = skew(gen, right.right);
-    if (rr !== right.right) {
-      right = unlock(gen, right);
-      right.right = rr;
+  node = skew(config, node);
+  if (node.right) {
+    right = skew(config, node.right);
+    if (right.right) {
+      const rr = skew(config, right.right);
+      if (rr !== right.right) {
+        right = unlock(config, right);
+        right.right = rr;
+      }
     }
+    node.right = right;
   }
 
-  node.right = right;
-  node = split(gen, node);
-  node.right = split(gen, node.right);
+  node = split(config, node);
+  if (node.right) {
+    node.right = split(config, node.right);
+  }
   return node;
 }
 
-function detachMin<V, R>(gen: Generation, node: Node<V, R>): { root?: Node<V, R>; detached: Node<V, R> } {
+function detachMin<V, R>(config: Config<V, R>, node: Node<V, R>): { root?: Node<V, R>; detached: Node<V, R> } {
   if (!node.left) {
     return { root: node.right, detached: node };
   }
-  const min = detachMin(gen, node.left);
-  const root = unlock(gen, node);
+  const min = detachMin(config, node.left);
+  const root = unlock(config, node);
   root.left = min.root;
-  min.root = rebalance(gen, rereduce(root));
+  min.root = rebalance(config, rereduce(root));
   return min;
 }
 
-function unlock<V, R>(gen: Generation, node: Node<V, R>): Node<V, R> {
-  if (gen === node._gen) {
+function unlock<V, R>(config: Config<V, R>, node: Node<V, R>): Node<V, R> {
+  if (config === node._config) {
     return node;
   }
-  return new Node(gen, node.value, node._config, node._mapped, node._reduced, node.left, node.right, node._level);
+  return new Node(node.value, config, node._mapped, node._reduced, node.left, node.right, node._level);
 }
 
-function insert<V, R>(gen: Generation, parent: Node<V, R>, value: V, mapped: R): Node<V, R> {
-  let node = unlock(gen, parent);
-
-  if (node._config.cmp(value, node.value, mapped, node._mapped) < 0) {
-    node.left = node.left ? insert(gen, node.left, value, mapped) : new Node(gen, value, node._config, mapped, mapped);
-  } else {
-    node.right = node.right
-      ? insert(gen, node.right, value, mapped)
-      : new Node(gen, value, node._config, mapped, mapped);
+function insert<V, R>(parent: Node<V, R> | undefined, newNode: Node<V, R>): Node<V, R> {
+  if (!parent) {
+    return newNode;
   }
-  return split(gen, skew(gen, rereduce(node)));
+  const config = newNode._config;
+
+  let node = unlock(config, parent);
+  const cmp = node._config.cmp(newNode.value, node.value, newNode._mapped, node._mapped);
+  if (cmp < 0) {
+    node.left = insert(node.left, newNode);
+  } else {
+    node.right = insert(node.right, newNode);
+  }
+
+  return split(config, skew(config, rereduce(node)));
 }
 
 function rereduce<V, R>(node: Node<V, R>): Node<V, R> {
+  const left = node.left;
+  const right = node.right;
+
   let reduced = node._mapped;
-  if (node.left) {
-    reduced = node._config.reduce(reduced, node.left._reduced);
+  if (left) {
+    reduced = node._config.reduce(reduced, left._reduced);
   }
-  if (node.right) {
-    reduced = node._config.reduce(reduced, node.right._reduced);
+  if (right) {
+    reduced = node._config.reduce(reduced, right._reduced);
   }
   node._reduced = reduced;
   return node;
 }
 
-function split<V, R>(gen: Generation, node: Node<V, R>): Node<V, R>;
-function split<V, R>(gen: Generation, node?: Node<V, R>): Node<V, R> | undefined;
-function split<V, R>(gen: Generation, node?: Node<V, R>): Node<V, R> | undefined {
-  if (!node) {
-    return node;
-  }
-
+function split<V, R>(config: Config<V, R>, node: Node<V, R>): Node<V, R> {
   const right = node.right;
   if (!right || !right.right || node._level !== right.right._level) {
     return node;
   }
 
-  const root = unlock(gen, right);
+  const root = unlock(config, right);
   root._level += 1;
   root._reduced = node._reduced;
 
-  const left = unlock(gen, node);
+  const left = unlock(config, node);
   left.right = right.left;
 
   root.left = rereduce(left);
   return root;
 }
 
-function skew<V, R>(gen: Generation, node: Node<V, R>): Node<V, R>;
-function skew<V, R>(gen: Generation, node?: Node<V, R>): Node<V, R> | undefined;
-function skew<V, R>(gen: Generation, node?: Node<V, R>): Node<V, R> | undefined {
-  if (!node) {
-    return node;
-  }
-
+function skew<V, R>(config: Config<V, R>, node: Node<V, R>): Node<V, R> {
   const left = node.left;
   if (!left || node._level !== left._level) {
     return node;
   }
 
-  const root = unlock(gen, left);
+  const root = unlock(config, left);
   root._reduced = node._reduced;
 
-  const right = unlock(gen, node);
+  const right = unlock(config, node);
   right.left = root.right;
 
   root.right = rereduce(right);
   return root;
 }
 
+export interface MutableTreeducer<V, R> {
+  reduce(): R | undefined;
+  insert(value: V): void;
+  delete(value: V): boolean;
+  update(value: V): boolean;
+  forEach(func: (value: V) => void, thisArg?: unknown): void;
+}
+export const MutableTreeducer = Mutable as {
+  new <V, R>(config: Config<V, R>): MutableTreeducer<V, R>;
+};
 export interface Treeducer<V, R> {
   reduce(): R | undefined;
   insert(value: V): Treeducer<V, R>;
   delete(value: V): Treeducer<V, R>;
+  update(from: V, to: V): Treeducer<V, R>;
   forEach(func: (value: V) => void, thisArg?: unknown): void;
   withMutations(mutator: (mutable: Mutable<V, R>) => Promise<void>): Promise<Treeducer<V, R>>;
   withMutations(mutator: (mutable: Mutable<V, R>) => void): Treeducer<V, R>;
