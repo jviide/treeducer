@@ -28,9 +28,6 @@
   "keywords": [
     "typescript"
   ],
-  "dependencies": {
-    "@hownetworks/ipv46": "^2.0.2"
-  },
   "prettier": {
     "printWidth": 120
   }
