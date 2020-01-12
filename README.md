@@ -29,7 +29,7 @@ tree = tree
   .insert(3)
   .delete(2);
 
-tree.reduce(); // 4
+tree.select().reduce(); // 4
 ```
 
 ## License
