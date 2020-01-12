@@ -23,13 +23,36 @@ let tree = new Treeducer({
   }
 });
 
+// Use as an immutable tree where each insertion / deletion / update
+// returns a new tree...
 tree = tree
   .insert(1)
   .insert(2)
-  .insert(3)
-  .delete(2);
+  .delete(2)
+  .update(1, 0);
 
-tree.select().reduce(); // 4
+// ...or use a temporary mutable version of the tree.
+tree = tree.withMutations(mutable => {
+  for (let i = 1; i < 1024; i++) {
+    mutable.insert(i);
+  }
+});
+
+// Select a contiguous range of values (i.e. values 10..=100)...
+const selection = tree.select(value => {
+  if (value < 10) {
+    return -1;
+  } else if (value > 100) {
+    return 1;
+  } else {
+    return 0;
+  }
+});
+
+// ...and do stuff with the selected values.
+selection.first(); // 10
+selection.last(); // 100
+selection.reduce(); // 5005 (i.e. the sum of the selected values)
 ```
 
 ## License
