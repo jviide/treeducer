@@ -53,6 +53,7 @@ const selection = tree.select(value => {
 selection.first(); // 10
 selection.last(); // 100
 selection.reduce(); // 5005 (i.e. the sum of the selected values)
+Array.from(selection); // [10, 11, ..., 99, 100]
 ```
 
 ## License
