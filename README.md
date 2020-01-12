@@ -33,12 +33,16 @@ tree = tree
 
 // ...or use a temporary mutable version of the tree.
 tree = tree.withMutations(mutable => {
-  for (let i = 1; i < 1024; i++) {
+  for (let i = 1000; i > 0; i--) {
     mutable.insert(i);
   }
 });
 
-// Select a contiguous range of values (i.e. values 10..=100)...
+// Insertion order doesn't matter - the tree is sorted by value (with the given `cmp`).
+Array.from(tree.select()); // [0, 1, 2, ..., 998, 999, 1000]
+
+// By default select() "selects" all values in the tree, but it can also be used to
+// select a contiguous range of values (i.e. values 10..=100)...
 const selection = tree.select(value => {
   if (value < 10) {
     return -1;
